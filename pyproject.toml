@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvar-quantum-research"
+version = "0.1.0"
+description = "CVaR QAOA/VQE research framework for combinatorial optimisation"
+readme = "README.md"
+authors = [
+    { name = "Miguel Maciel", email = "miguel@example.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "qiskit>=1.0.0",
+    "qiskit-algorithms>=0.3.0",
+    "scipy>=1.10.0",
+    "numpy>=1.24.0",
+    "networkx>=3.0",
+    "rustworkx>=0.14.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "mypy>=1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+ignore_missing_imports = true
+strict = false
