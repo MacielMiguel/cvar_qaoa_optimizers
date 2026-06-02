@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from qiskit.quantum_info import SparsePauliOp
 
@@ -20,7 +20,7 @@ class MaxMulticutHamiltonian(Hamiltonian):
     where I(·) is the indicator function.
     """
 
-    def __init__(self, edges: List[Tuple[int, int]], num_colors: int = 3, num_vertices: int = None):
+    def __init__(self, edges: List[Tuple[int, int]], num_colors: int = 3, num_vertices: Optional[int] = None):
         """
         Initialize MaxMulticut Hamiltonian.
 
@@ -36,7 +36,7 @@ class MaxMulticutHamiltonian(Hamiltonian):
         self.num_colors = num_colors
         self.num_vertices = num_vertices or (max(max(e) for e in edges) + 1 if edges else 0)
         
-        # Each vertex needs ceil(log2(num_colors)) qubits to encode its color
+        # Each vertex needs ceil(log2(num_colors)) qubits to encode its color (one-hot encoding).
         self.qubits_per_vertex = int(np.ceil(np.log2(num_colors))) if num_colors > 1 else 1
         self.num_qubits = self.num_vertices * self.qubits_per_vertex
 
@@ -79,7 +79,7 @@ class MaxMulticutHamiltonian(Hamiltonian):
 
     def evaluate_cut_size(self, bitstring: str) -> int:
         """Return the actual cut size (positive, number of edges between communities)."""
-        return -self.evaluate(bitstring)
+        return int(-self.evaluate(bitstring))
 
     def _build_pauli_op(self) -> SparsePauliOp:
         """Convert to a Qiskit SparsePauliOp for use with QAOA/VQE.

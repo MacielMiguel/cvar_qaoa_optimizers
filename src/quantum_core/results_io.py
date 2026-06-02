@@ -32,14 +32,14 @@ logger = logging.getLogger(__name__)
 
 class _NumpyEncoder(json.JSONEncoder):
     """Make numpy scalars and arrays JSON-serialisable."""
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+        return super().default(o)
 
 
 def _to_list(results: Union[Dict, List]) -> List[Dict]:

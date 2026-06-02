@@ -1,11 +1,11 @@
 import numpy as np
-from typing import List
+from typing import List, Optional
 
 from problems.maxcut.hamiltonian import MaxCutHamiltonian, Ising_Hamiltonian
 from quantum_core.graphs import GraphInstanceGenerator
 
 
-class MaxCutInstanceGenerator(GraphInstanceGenerator):
+class MaxCutInstanceGenerator:
     """Generate MaxCut (and Ising) problem instances."""
 
     # ------------------------------------------------------------------
@@ -13,9 +13,12 @@ class MaxCutInstanceGenerator(GraphInstanceGenerator):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def random(num_qubits: int, edge_density: float = 0.5, seed: int = None) -> MaxCutHamiltonian:
+    def random(num_qubits: int, edge_density: float = 0.5, seed: Optional[int] = None) -> MaxCutHamiltonian:
         """Random MaxCut instance with reproducible seed."""
-        edges = GraphInstanceGenerator.random(num_qubits, edge_density, seed)
+        if seed is None:
+            edges = GraphInstanceGenerator.random(num_qubits, edge_density)
+        else:
+            edges = GraphInstanceGenerator.random(num_qubits, edge_density, seed)
         return MaxCutHamiltonian(edges, num_qubits)
 
     @staticmethod
@@ -42,7 +45,7 @@ class MaxCutInstanceGenerator(GraphInstanceGenerator):
         h_strength: float = 1.0,
         J_strength: float = 1.0,
         coupling_density: float = 0.5,
-        seed: int = None,
+        seed: Optional[int] = None,
     ) -> Ising_Hamiltonian:
         """Random Ising model."""
         rng = np.random.RandomState(seed)

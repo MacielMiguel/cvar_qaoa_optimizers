@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 
 import rustworkx as rx
 from qiskit.quantum_info import SparsePauliOp
@@ -15,7 +15,7 @@ class MaxCutHamiltonian(Hamiltonian):
     which is equivalent to maximising the cut size.
     """
 
-    def __init__(self, edges: List[Tuple[int, int]], num_qubits: int = None):
+    def __init__(self, edges: List[Tuple[int, int]], num_qubits: Optional[int] = None):
         self.edges = edges
         self.num_qubits = num_qubits or (max(max(e) for e in edges) + 1)
         self.instance = {
@@ -33,7 +33,7 @@ class MaxCutHamiltonian(Hamiltonian):
 
     def evaluate_cut_size(self, bitstring: str) -> int:
         """Return the actual cut size (positive)."""
-        return -self.evaluate(bitstring)
+        return int(-self.evaluate(bitstring))
 
     def _build_pauli_op(self) -> SparsePauliOp:
         """Convert to a Qiskit SparsePauliOp for use with QAOA/VQE."""
@@ -65,7 +65,7 @@ class Ising_Hamiltonian(Hamiltonian):
     H = sum_i h_i * Z_i + sum_{i,j} J_{ij} * Z_i * Z_j
     """
 
-    def __init__(self, h: Dict[int, float], J: Dict[Tuple[int, int], float], num_qubits: int = None):
+    def __init__(self, h: Dict[int, float], J: Dict[Tuple[int, int], float], num_qubits: Optional[int] = None):
         self.h = h
         self.J = J
         if num_qubits is None:
@@ -90,9 +90,9 @@ class HamiltonianBuilder:
     """Factory for creating Hamiltonian instances."""
 
     @staticmethod
-    def maxcut(edges: List[Tuple[int, int]], num_qubits: int = None) -> MaxCutHamiltonian:
+    def maxcut(edges: List[Tuple[int, int]], num_qubits: Optional[int] = None) -> MaxCutHamiltonian:
         return MaxCutHamiltonian(edges, num_qubits)
 
     @staticmethod
-    def ising(h: Dict[int, float], J: Dict[Tuple[int, int], float], num_qubits: int = None) -> Ising_Hamiltonian:
+    def ising(h: Dict[int, float], J: Dict[Tuple[int, int], float], num_qubits: Optional[int] = None) -> Ising_Hamiltonian:
         return Ising_Hamiltonian(h, J, num_qubits)

@@ -4,14 +4,14 @@ Shared utilities for creating graph structures used in combinatorial optimizatio
 """
 
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 class GraphInstanceGenerator:
     """Base class with shared graph generation utilities."""
 
     @staticmethod
-    def random(num_vertices: int, edge_density: float = 0.5, seed: int = None) -> List[Tuple[int, int]]:
+    def random(num_vertices: int, edge_density: float = 0.5, seed: Optional[int] = None) -> List[Tuple[int, int]]:
         """Generate random edges with reproducible seed.
         
         Args:
@@ -85,7 +85,7 @@ class GraphInstanceGenerator:
         num_vertices: int,
         num_partitions: int,
         inter_partition_density: float = 0.5,
-        seed: int = None
+        seed: Optional[int] = None
     ) -> List[Tuple[int, int]]:
         """Generate k-partite graph edges (edges only between different partitions).
         

@@ -10,11 +10,15 @@ import numpy as np
 import scipy.optimize as opt
 from numpy.typing import NDArray
 
+# Attempt dynamic import of the optional `pdfo` package. Use importlib to
+# avoid static analyzers complaining about a missing module in some envs.
 try:
-    import pdfo as _pdfo
+    from importlib import import_module
+    _pdfo = import_module("pdfo")
     _PDFO_AVAILABLE = True
-except ImportError:
-    _pdfo = None  # type: ignore[assignment]
+except Exception:
+    # Could be ImportError or other import-time issues; treat as unavailable.
+    _pdfo = None
     _PDFO_AVAILABLE = False
 
 logger = logging.getLogger(__name__)

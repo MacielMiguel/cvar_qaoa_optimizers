@@ -3,6 +3,7 @@ import logging
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ def plot_cost_evolution(results_suite1, output_dir):
         )
     
     fig.suptitle("Évolution du coût CVaR-QAOA et CVaR-VQE", fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
     
     out_path = os.path.join(output_dir, "cost_evolution.png")
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
@@ -208,7 +209,7 @@ def plot_optimizer_benchmark(results_suite2, output_dir):
         )
     
     fig.suptitle("Benchmark des algorithmes d'optimisation", fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
     
     out_path = os.path.join(output_dir, "optimizer_benchmark.png")
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
@@ -305,8 +306,10 @@ def plot_success_probability(results_suite3: list, output_dir: str) -> None:
     n_rows     = len(all_reps)
 
     n_alpha = len(all_alphas)
-    blue_colors = plt.cm.Blues(np.linspace(0.35, 1.0, max(n_alpha, 1)))
-    red_colors  = plt.cm.Reds( np.linspace(0.35, 1.0, max(n_alpha, 1)))
+    blue_cmap = cm.get_cmap('Blues')
+    red_cmap = cm.get_cmap('Reds')
+    blue_colors = blue_cmap(np.linspace(0.35, 1.0, max(n_alpha, 1)))
+    red_colors  = red_cmap( np.linspace(0.35, 1.0, max(n_alpha, 1)))
     markers     = ['o', 's', '^', 'v', 'D', 'p', '*', 'h', 'X', 'd']
 
     thresholds        = [0.01,       0.10]

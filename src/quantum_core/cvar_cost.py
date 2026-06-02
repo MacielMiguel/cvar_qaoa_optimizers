@@ -40,7 +40,10 @@ def evaluate_sparse_pauli(state: int, observable: SparsePauliOp) -> complex:
     )
     # For each term: AND selects the relevant qubits, XOR-reduce gives parity
     reduced = np.bitwise_xor.reduce(packed_uint8 & state_bytes, axis=1)
-    return np.sum(observable.coeffs * _PARITY[reduced])
+    coeffs = observable.coeffs
+    if coeffs is None:
+        coeffs = np.ones(len(reduced), dtype=np.complex128)
+    return np.sum(coeffs * _PARITY[reduced])
 
 
 def _get_cvar_aggregation(alpha: float) -> Callable:
@@ -129,8 +132,8 @@ def cvar_sampler_cost_fun(
     # --- 3. Aggregate into a scalar cost ---
     if aggregation is None:
         result = sum(p * v for p, v in evaluated.values())
-    elif isinstance(aggregation, float):
-        result = _get_cvar_aggregation(aggregation)(evaluated.values())
+    elif isinstance(aggregation, (int, float, np.integer, np.floating)):
+        result = _get_cvar_aggregation(float(aggregation))(evaluated.values())
     else:
         result = aggregation(evaluated.values())
 
