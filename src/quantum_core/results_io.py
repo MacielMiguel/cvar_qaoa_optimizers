@@ -2,9 +2,9 @@
 Persist experiment results to CSV (summary) and JSON (full history).
 
 Usage:
-    from cvar_quantum.results_io import save_results
+    from quantum_core.results_io import save_results
 
-    save_results(results, output_dir, suite_name="suite1")
+    save_results(results, output_dir, suite_name="suite1", config=config)
 
 `results` can be either:
   - a dict  {key: result_dict}   (suites 1 & 2)
@@ -13,15 +13,21 @@ Usage:
 Output files:
   {output_dir}/{suite_name}_summary.csv   — one row per experiment
   {output_dir}/{suite_name}_full.json     — full iteration history
+  {output_dir}/{suite_name}_config.json   — suite configuration + library versions
 """
 
 import csv
+import dataclasses
 import json
 import logging
 import os
-from typing import Dict, List, Union
+import platform
+from importlib import metadata
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
+
+from quantum_core.solver import state_to_bitstring
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +56,24 @@ def _to_list(results: Union[Dict, List]) -> List[Dict]:
 
 
 def _serialize_optimizer_result(res: Dict) -> Dict:
-    """Extract JSON-safe fields from a scipy OptimizeResult."""
-    r = res.get('result', {})
-    if not hasattr(r, 'x'):
-        return {}
-    return {
-        'x': r.x.tolist() if hasattr(r.x, 'tolist') else list(r.x),
-        'fun': float(r.fun),
-        'nfev': int(r.nfev),
-        'success': bool(r.success),
-        'message': str(r.message),
-    }
+    """Extract JSON-safe fields from the result dict built by run_experiment()."""
+    r = res.get("result") or {}
+    out = {}
+    for key, value in r.items():
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        out[key] = value
+    return out
+
+
+def _versions() -> Dict[str, str]:
+    versions = {"python": platform.python_version()}
+    for pkg in ("qiskit", "numpy", "scipy", "matplotlib", "pdfo"):
+        try:
+            versions[pkg] = metadata.version(pkg)
+        except metadata.PackageNotFoundError:
+            versions[pkg] = "not installed"
+    return versions
 
 
 # --------------------------------------------------------------------------- #
@@ -71,6 +84,7 @@ def save_results(
     results: Union[Dict, List],
     output_dir: str,
     suite_name: str,
+    config: Optional[Any] = None,
 ) -> None:
     """
     Save experiment results to CSV and JSON.
@@ -79,10 +93,19 @@ def save_results(
         results:     dict or list of result dicts returned by run_experiment().
         output_dir:  Directory where files are written (must already exist).
         suite_name:  Used as a filename prefix, e.g. "suite1".
+        config:      Suite configuration (dataclass or dict) saved alongside the
+                     results so that every figure can be regenerated.
     """
     records = _to_list(results)
     _save_csv(records, output_dir, suite_name)
     _save_json(records, output_dir, suite_name)
+    if config is not None:
+        cfg = dataclasses.asdict(config) if dataclasses.is_dataclass(config) else dict(config)
+        path = os.path.join(output_dir, f"{suite_name}_config.json")
+        with open(path, "w") as f:
+            json.dump({"suite": suite_name, "config": cfg, "versions": _versions()},
+                      f, indent=2, cls=_NumpyEncoder)
+        logger.info("Config saved to %s", path)
 
 
 def _save_csv(records: List[Dict], output_dir: str, suite_name: str) -> None:
@@ -94,7 +117,10 @@ def _save_csv(records: List[Dict], output_dir: str, suite_name: str) -> None:
         "optimizer_name",
         "num_qubits",
         "reps",
-        "num_iterations",
+        "shots",
+        "seed",
+        "max_evals",
+        "num_evaluations",
         "initial_cvar_mean_energy",
         "final_cvar_mean_energy",
         "initial_success_prob",
@@ -116,7 +142,10 @@ def _save_csv(records: List[Dict], output_dir: str, suite_name: str) -> None:
                 "optimizer_name":           res["optimizer_name"],
                 "num_qubits":               res["num_qubits"],
                 "reps":                     res["reps"],
-                "num_iterations":           len(history),
+                "shots":                    res.get("shots", ""),
+                "seed":                     res.get("seed", ""),
+                "max_evals":                res.get("max_evals", ""),
+                "num_evaluations":          len(history),
                 "initial_cvar_mean_energy": history[0]["cvar_mean_energy"] if history else "",
                 "final_cvar_mean_energy":   history[-1]["cvar_mean_energy"] if history else "",
                 "initial_success_prob":     history[0].get("success_prob", "") if history else "",
@@ -124,7 +153,7 @@ def _save_csv(records: List[Dict], output_dir: str, suite_name: str) -> None:
                 "time_s":                   round(res["time"], 3),
                 "num_optimal_states":       len(optimal_states),
                 "optimal_states":           " ".join(
-                    format(s, f"0{res['num_qubits']}b") for s in sorted(optimal_states)
+                    state_to_bitstring(s, res["num_qubits"]) for s in sorted(optimal_states)
                 ),
             })
 
@@ -144,12 +173,17 @@ def _save_json(records: List[Dict], output_dir: str, suite_name: str) -> None:
             "optimizer_name":   res["optimizer_name"],
             "num_qubits":       res["num_qubits"],
             "reps":             res["reps"],
+            "shots":            res.get("shots"),
+            "seed":             res.get("seed"),
+            "max_evals":        res.get("max_evals"),
+            "num_params":       res.get("num_params"),
+            "instance":         res.get("instance"),
             "time_s":           res["time"],
             "optimal_states":   sorted(res.get("optimal_states", [])),
             "optimizer_result": _serialize_optimizer_result(res),
             "history": [
                 {
-                    "iteration":    i + 1,
+                    "evaluation":   i + 1,
                     "cvar_mean_energy":    step["cvar_mean_energy"],
                     "mean_energy":  step["mean_energy"],
                     "success_prob": step.get("success_prob", 0.0),

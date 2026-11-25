@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from quantum_core.experiment import run_experiment
-from quantum_core.display import plot_cost_evolution, plot_distribution_evolution
+from quantum_core.display import plot_optimizer_benchmark, plot_distribution_evolution
 from quantum_core.results_io import save_results
 from problems.maxmulticut.instances import MaxMulticutInstanceGenerator
 
@@ -67,7 +67,7 @@ def run(output_dir: str) -> None:
         results[opt_name] = res
         logger.info(f"  [{i + 1}/{total}] {opt_name} ({res['time']:.1f}s)")
 
-    plot_cost_evolution(results, output_dir)
+    plot_optimizer_benchmark(results, output_dir)
     for key, res in results.items():
         plot_distribution_evolution(res, output_dir, filename=f"distribution_{key}.png")
-    save_results(results, output_dir, suite_name="suite2_maxmulticut")
+    save_results(results, output_dir, suite_name="suite2_maxmulticut", config=config)

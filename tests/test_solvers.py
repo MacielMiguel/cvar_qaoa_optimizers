@@ -21,8 +21,9 @@ def test_simulated_annealing():
     def obj(x):
         return x[0] ** 2 + x[1] ** 2
 
-    optimizer = SimulatedAnnealing(maxiter=50)
-    result = optimizer.optimize(obj, initial_point=np.array([5.0, -5.0]))
+    # maxiter is the budget of function evaluations (maxfun of dual_annealing)
+    optimizer = SimulatedAnnealing(maxiter=5000)
+    result = optimizer.optimize(obj, initial_point=np.array([5.0, -5.0]), bounds=[(-10, 10), (-10, 10)])
 
     assert result["success"] is True
     assert np.isclose(result["x"][0], 0.0, atol=1e-1)

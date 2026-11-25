@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from quantum_core.experiment import run_experiment
-from quantum_core.display import plot_cost_evolution, plot_distribution_evolution
+from quantum_core.display import plot_curves_by, plot_distribution_evolution
 from quantum_core.results_io import save_results
 from problems.maxmulticut.instances import MaxMulticutInstanceGenerator
 
@@ -56,7 +56,7 @@ def run(output_dir: str) -> None:
     for num_v in config.num_vertices_list:
         for num_c in config.num_colors_list:
             i += 1
-            hamiltonian = MaxMulticutInstanceGenerator.fixed_grid_3x3(num_colors=num_c) if num_v == 9 else MaxMulticutInstanceGenerator.random(
+            hamiltonian = MaxMulticutInstanceGenerator.fixed_grid_3x3(num_colors=num_c) if num_v == 9 else MaxMulticutInstanceGenerator.random_instance(
                 num_vertices=num_v, num_colors=num_c, edge_density=0.5, seed=42
             )
             res = run_experiment(
@@ -72,7 +72,7 @@ def run(output_dir: str) -> None:
             results[key] = res
             logger.info(f"  [{i}/{total}] {key} ({res['time']:.1f}s)")
 
-    plot_cost_evolution(results, output_dir)
+    plot_curves_by(results, "num_qubits", output_dir, filename="suite3_maxmulticut_scaling.png")
     for key, res in results.items():
         plot_distribution_evolution(res, output_dir, filename=f"distribution_{key}.png")
-    save_results(results, output_dir, suite_name="suite3_maxmulticut")
+    save_results(results, output_dir, suite_name="suite3_maxmulticut", config=config)

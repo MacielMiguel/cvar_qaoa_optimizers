@@ -19,7 +19,7 @@ This project provides:
 ├── pyproject.toml
 ├── README.md
 ├── main.py                          # Entry point - choose MaxCut or MaxMulticut suites
-├── run.sh
+├── run.sh                           # ./run.sh <suite> [--workers N]
 ├── src/
 │   ├── quantum_core/                # Core quantum & optimization abstractions
 │   │   ├── hamiltonian.py           # Base Hamiltonian class
@@ -64,13 +64,11 @@ This project provides:
 Main dependencies:
 
 - qiskit >= 1.0.0
-- qiskit-algorithms >= 0.3.0
 - scipy >= 1.10.0
 - numpy >= 1.24.0
-- networkx >= 3.0
 - rustworkx >= 0.14.0
-- matplotlib >= 3.7.0
-- pdfo (optional, for Powell solvers)
+- matplotlib >= 3.9
+- pdfo (optional, for the PDFO optimizers; building it needs a Fortran compiler on some platforms)
 
 ## Installation
 
@@ -86,8 +84,8 @@ conda activate quantum
 # Install from project root
 pip install -e .
 
-# Install optional pdfo for advanced optimizers
-pip install pdfo
+# Install optional pdfo for the PDFO optimizers
+pip install -e .[pdfo]
 ```
 
 ### Install development dependencies
@@ -104,47 +102,43 @@ pytest
 
 ## Run Experiments
 
-### Configure Experiments
-
-Edit the configuration dataclass in each suite file:
-
-**MaxCut Suites**: `suites/maxcut/suite{1,2,3}.py`
-**MaxMulticut Suites**: `suites/maxmulticut/suite{1,2,3}.py`
-
-Each suite has a `Suite{N}Config` dataclass with parameters:
-- `num_qubits` / `num_vertices`: Problem size
-- `num_colors`: For MaxMulticut only
-- `alphas`: CVaR alpha values to sweep
-- `reps`: QAOA circuit depth
-- `maxiter`: Classical optimizer iterations
-- `shots`: Shots per circuit evaluation
-- `optimizers`: List of optimizers to benchmark
-
-### Quick Start (Fast)
-
-```python
-# In main.py, uncomment one suite:
-
-# MaxCut - Suite 1
-maxcut_suite1.run(output_run_dir)
+```bash
+python main.py maxcut-suite1                 # one suite
+python main.py paper --workers 4             # the three suites used in the paper
+python main.py maxcut-suite3 --quick         # tiny configuration, for testing
+python main.py --help                        # all suites and options
 ```
 
-### Reduced Parameters for Testing
+Each run writes to `results/<timestamp>/`. Parameters live in the `Suite{N}Config`
+dataclass at the top of each suite file (`suites/maxcut/suite{1,2,3}.py`,
+`suites/maxmulticut/suite{1,2,3}.py`):
 
-MaxMulticut Suite 1 has friendly defaults for fast debugging:
-```python
-alphas: [0.1, 0.5, 1.0]      # 3 alphas instead of 7
-maxiter: 15                   # reduced from 90
-shots: 256                    # reduced from 1024
-# ~144x faster for initial testing
+- `num_qubits` / `num_nodes` / `num_vertices`: problem size
+- `alphas` / `alpha`: CVaR level(s), 0 < alpha <= 1
+- `reps` / `reps_list`: circuit depth
+- `max_evals`: budget of **circuit evaluations** per run, identical for every optimizer
+- `shots`: shots per circuit evaluation
+- `seeds` / `num_instances`: independent runs (initial point and shot noise are seeded)
+
+## Reproducing the Paper
+
+The default configurations of the three MaxCut suites are exactly those used in the paper.
+
+```bash
+pip install -e .[pdfo]
+python main.py paper --workers 4
 ```
 
-For full benchmark, modify config in suite file:
-```python
-alphas: [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
-maxiter: 90
-shots: 1024
-```
+| Paper figure | Suite | Output file |
+|---|---|---|
+| Fig. 2 (effect of alpha) | `maxcut-suite1` | `suite1_alpha_sweep.png` |
+| Fig. 3 (outcome distribution) | `maxcut-suite1` | `suite1_distribution.png` |
+| Fig. 4 (optimizer benchmark) | `maxcut-suite2` | `suite2_scipy.png`, `suite2_pdfo.png` |
+| Fig. 5 (success probability) | `maxcut-suite3` | `suite3_success_probability.png` |
+
+Every suite also writes `suite{N}_config.json` (configuration and library versions),
+`suite{N}_summary.csv` (one row per run) and `suite{N}_full.json` (full history).
+The results used in the paper are kept in `results/paper/`.
 
 ## Usage Examples
 
@@ -217,38 +211,34 @@ result = run_experiment(
 
 ### MaxCut Suites
 
-**Suite 1: Architecture Comparison**
-- Compares QAOA vs VQE across multiple CVaR alpha values
-- Tests on fixed 6-node instance
-- Outputs convergence curves and success probability plots
+**Suite 1: Effect of the CVaR level**
+- Fixed 6-node graph, depth p = 1, COBYLA, 100 circuit evaluations, 1024 shots
+- alpha in {0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1}, QAOA and VQE, 10 seeds each
+- Outputs: CVaR cost versus evaluations (median and inter-quartile range over seeds),
+  outcome distribution before/after optimization
 
-**Suite 2: Optimizer Benchmark**
-- Tests 5 different classical optimizers on QAOA
-- Fixed alpha=0.25, measures convergence speed
-- Compares scipy vs pdfo solvers
+**Suite 2: Optimizer benchmark**
+- Same graph, p = 1, alpha = 0.5, 200 circuit evaluations for every optimizer, 10 seeds
+- SciPy: COBYLA, Nelder-Mead, Powell, BFGS, conjugate gradient, dual annealing
+- PDFO: COBYLA, NEWUOA, BOBYQA, LINCOA, UOBYQA
+- Output: best CVaR found so far versus evaluations
 
-**Suite 3: Scaling Analysis**  
-- Studies how problem size affects convergence
-- Varies problem size (4-20 nodes)
-- Outputs scaling curves
+**Suite 3: Success probability (Fig. 4 of Barkoutsos et al.)**
+- 60 random graphs, 8 nodes, edge density 0.5 (seeds 800 to 859)
+- p in {1, 2}, alpha in {0.01, 0.25, 0.5, 1}, COBYLA, 100 circuit evaluations
+- Output: fraction of instances whose success probability reached 1 % and 10 %,
+  versus normalized evaluations t / n
 
 ### MaxMulticut Suites
 
-**Suite 1: Architecture Comparison** (with debug prints)
-- QAOA vs VQE on 6-node graph with 3-coloring
-- Includes detailed timing breakdown:
-  - Hamiltonian creation
-  - Pauli operator generation (can be slow for many qubits)
-  - Brute-force reference computation
-  - Per-iteration timing statistics
+**Suite 1: QAOA vs VQE** on a 6-vertex graph with 3 colors.
+**Suite 2: Optimizer benchmark** (PDFO optimizers, QAOA).
+**Suite 3: Scaling** with the number of vertices (4 to 6) and colors (2 and 3).
 
-**Suite 2: Optimizer Benchmark**
-- Tests pdfo optimizers on MaxMulticut
-- Helps identify best solver for the problem
-
-**Suite 3: Color Scaling**
-- Studies effect of number of colors (2-4)  
-- Different graph sizes (4-7 vertices)
+> Note: with a number of colors that is not a power of 2 (e.g. k = 3), some
+> binary codes do not correspond to a color. The classical `evaluate()` penalizes
+> them, but the quantum operator does not yet include a penalty term, so the
+> MaxMulticut results are exploratory.
 
 ## Output
 
@@ -277,9 +267,13 @@ Experiment results saved to `results/{timestamp}/`:
 
 ## Reproducibility
 
-- All experiments use fixed random seeds
-- Instance generators support seeded randomness
-- Save full configs in results
+- Each run is fully determined by its `seed`: the initial point and the shot noise of
+  the sampler are both drawn from seeded generators, so re-running a suite gives
+  identical numbers (tested in `tests/test_experiment.py`).
+- Random instances are generated from explicit seeds.
+- Every results folder contains the configuration and the library versions used.
+- Bit-ordering convention: measured states are integers in Qiskit order (bit i = qubit i);
+  `quantum_core.solver.state_to_bitstring` converts them to bitstrings indexed by variable.
 
 ## References
 
@@ -290,5 +284,4 @@ Experiment results saved to `results/{timestamp}/`:
 
 ## License
 
-TBD
-- The matplotlib backend is set to non-interactive mode in the experiment script (`Agg`) to support non-notebook execution.
+GNU General Public License v3.0 (see `LICENSE`).

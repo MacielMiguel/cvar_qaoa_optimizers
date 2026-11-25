@@ -1,0 +1,46 @@
+{
+  "suite": "suite2",
+  "config": {
+    "num_qubits": 6,
+    "reps": 1,
+    "alpha": 0.5,
+    "scipy_optimizers": [
+      "COBYLA",
+      "Nelder-Mead",
+      "Powell",
+      "BFGS",
+      "ConjugateGradient",
+      "SimulatedAnnealing"
+    ],
+    "pdfo_optimizers": [
+      "COBYLA_PDFO",
+      "NEWUOA",
+      "BOBYQA",
+      "LINCOA",
+      "UOBYQA"
+    ],
+    "max_evals": 200,
+    "shots": 1024,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "workers": 2
+  },
+  "versions": {
+    "python": "3.13.18",
+    "qiskit": "2.6.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "matplotlib": "3.11.2",
+    "pdfo": "2.2.0"
+  }
+}

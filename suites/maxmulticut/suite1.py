@@ -123,7 +123,7 @@ def run(output_dir: str) -> None:
     
     logger.info(f"[DEBUG] Saving results...")
     save_start = time.time()
-    save_results(results, output_dir, suite_name="suite1_maxmulticut")
+    save_results(results, output_dir, suite_name="suite1_maxmulticut", config=config)
     save_time = time.time() - save_start
     logger.info(f"[DEBUG] Results saved in {save_time:.1f}s")
     

@@ -25,7 +25,7 @@ Usage:
 import time
 from typing import Dict
 
-from quantum_core.solver import ClassicalSolver, brute_force
+from quantum_core.solver import ClassicalSolver, brute_force, state_to_bitstring
 from problems.maxcut.hamiltonian import MaxCutHamiltonian
 
 
@@ -42,7 +42,7 @@ class BruteForceSolver(ClassicalSolver):
         optimal_states = brute_force(hamiltonian)
         # Pick the lowest integer as a canonical representative
         representative = min(optimal_states)
-        bitstring = format(representative, f"0{hamiltonian.num_qubits}b")
+        bitstring = state_to_bitstring(representative, hamiltonian.num_qubits)
         energy = hamiltonian.evaluate(bitstring)
         return {
             "bitstring": bitstring,

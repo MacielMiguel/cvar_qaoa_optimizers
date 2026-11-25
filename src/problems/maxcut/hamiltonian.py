@@ -1,7 +1,6 @@
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 
-import rustworkx as rx
 from qiskit.quantum_info import SparsePauliOp
 
 from quantum_core.hamiltonian import Hamiltonian
@@ -11,24 +10,45 @@ class MaxCutHamiltonian(Hamiltonian):
     """
     MaxCut Problem Hamiltonian.
 
-    For a graph G=(V,E), minimises: -sum_{(i,j) in E} (1 - Z_i*Z_j)/2
-    which is equivalent to maximising the cut size.
+    For a graph G=(V,E), the cost Hamiltonian is
+
+        H_C = -1/2 * sum_{(i,j) in E} (I - Z_i Z_j)
+            =  1/2 * sum_{(i,j) in E} Z_i Z_j  -  |E|/2 * I,
+
+    whose eigenvalue on a basis state equals minus the size of the
+    corresponding cut. Minimising H_C is therefore maximising the cut, and
+    the quantum operator returned by to_pauli_op() gives exactly the same
+    value as evaluate().
     """
 
     def __init__(self, edges: List[Tuple[int, int]], num_qubits: Optional[int] = None):
+        if num_qubits is None:
+            if not edges:
+                raise ValueError("num_qubits must be given for a graph without edges")
+            num_qubits = max(max(e) for e in edges) + 1
         self.edges = edges
-        self.num_qubits = num_qubits or (max(max(e) for e in edges) + 1)
+        self.num_qubits = num_qubits
         self.instance = {
             "type": "MaxCut",
             "edges": edges,
             "num_qubits": self.num_qubits,
         }
 
+    def _unique_edges(self) -> List[Tuple[int, int]]:
+        seen = set()
+        unique = []
+        for i, j in self.edges:
+            key = (min(i, j), max(i, j))
+            if key not in seen:
+                seen.add(key)
+                unique.append(key)
+        return unique
+
     def evaluate(self, bitstring: str) -> float:
-        """Return negative cut size (for minimisation)."""
+        """Return minus the cut size. Character i of the bitstring is vertex i."""
         if len(bitstring) != self.num_qubits:
             raise ValueError(f"Bitstring length {len(bitstring)} != {self.num_qubits}")
-        cut_size = sum(1 for i, j in self.edges if bitstring[i] != bitstring[j])
+        cut_size = sum(1 for i, j in self._unique_edges() if bitstring[i] != bitstring[j])
         return -cut_size
 
     def evaluate_cut_size(self, bitstring: str) -> int:
@@ -36,23 +56,16 @@ class MaxCutHamiltonian(Hamiltonian):
         return int(-self.evaluate(bitstring))
 
     def _build_pauli_op(self) -> SparsePauliOp:
-        """Convert to a Qiskit SparsePauliOp for use with QAOA/VQE."""
-        graph = rx.PyGraph()
-        graph.add_nodes_from(range(self.num_qubits))
-        seen = set()
-        for i, j in self.edges:
-            if (i, j) not in seen and (j, i) not in seen:
-                graph.add_edge(i, j, 1.0)
-                seen.add((i, j))
-
-        pauli_list = []
-        for u, v in graph.edge_list():
-            paulis = ["I"] * len(graph)
+        """Return H_C = 1/2 sum Z_i Z_j - |E|/2 I as a Qiskit SparsePauliOp."""
+        edges = self._unique_edges()
+        n = self.num_qubits
+        pauli_list = [("I" * n, -0.5 * len(edges))]
+        for u, v in edges:
+            paulis = ["I"] * n
             paulis[u], paulis[v] = "Z", "Z"
-            weight = graph.get_edge_data(u, v)
-            pauli_list.append(("".join(paulis)[::-1], weight))
-
-        return SparsePauliOp.from_list(pauli_list)
+            # Qiskit labels are written qubit n-1 ... qubit 0, hence the reversal
+            pauli_list.append(("".join(paulis)[::-1], 0.5))
+        return SparsePauliOp.from_list(pauli_list).simplify()
 
     def to_dict(self) -> Dict:
         return self.instance

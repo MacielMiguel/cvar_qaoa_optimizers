@@ -1,0 +1,31 @@
+{
+  "suite": "suite3",
+  "config": {
+    "num_nodes": 8,
+    "edge_density": 0.5,
+    "num_instances": 60,
+    "base_seed": 800,
+    "reps_list": [
+      1,
+      2
+    ],
+    "alphas": [
+      0.01,
+      0.25,
+      0.5,
+      1.0
+    ],
+    "optimizer": "COBYLA",
+    "max_evals": 100,
+    "shots": 1024,
+    "workers": 2
+  },
+  "versions": {
+    "python": "3.13.18",
+    "qiskit": "2.6.2",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "matplotlib": "3.11.2",
+    "pdfo": "2.2.0"
+  }
+}

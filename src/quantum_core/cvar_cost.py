@@ -101,8 +101,8 @@ def cvar_sampler_cost_fun(
                               alpha; callable → custom aggregation.
         optimization_history: If provided, a dict is appended each call with
                               cvar_mean_energy, mean_energy, success_prob and distribution.
-        optimal_state:        Reference optimal state (int) used to track
-                              success probability across iterations.
+        optimal_states:       Reference optimal states (ints, Qiskit order) used
+                              to track the success probability.
         shots:                Number of circuit executions per call (default 1024).
 
     Returns:

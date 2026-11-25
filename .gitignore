@@ -133,6 +133,8 @@ dmypy.json
 .DS_Store
 Thumbs.db
 
-# Project-specific
-results/
+# Project-specific: runs are ignored, except the results used in the paper
+results/*
+!results/paper/
 *.csv
+!results/paper/*.csv

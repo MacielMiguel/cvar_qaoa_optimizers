@@ -1,504 +1,254 @@
+"""
+Plotting utilities for the experiment suites.
+
+All figures are sized for a two-column paper (one figure per column) and use
+English labels. Experiment parameters are deliberately *not* printed inside
+the figures: they belong in the caption and in the saved config.json.
+
+Results passed to these functions may be a dict {key: result} or a list of
+result dicts, as returned by run_experiment(). When several seeds are present
+for the same configuration, curves show the median over seeds and a shaded
+inter-quartile range (IQR).
+"""
 import os
 import logging
+from typing import Dict, Iterable, List, Optional, Union
+
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from matplotlib.patches import Patch
 import numpy as np
+
 
 logger = logging.getLogger(__name__)
 
+_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+           "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#000000"]
+_MARKERS = ["o", "s", "^", "v", "D", "p", "*", "h", "X", "d", "P"]
+_RC = {
+    "font.size": 9, "axes.titlesize": 10, "axes.labelsize": 9,
+    "xtick.labelsize": 8, "ytick.labelsize": 8, "legend.fontsize": 7,
+}
 
-def style_plot(ax, title, xlabel, ylabel):
-    """Apply corporate styling to matplotlib axes."""
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
-    ax.set_xlabel(xlabel, fontsize=11)
-    ax.set_ylabel(ylabel, fontsize=11)
-    ax.grid(True, linestyle='--', alpha=0.7)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.legend(frameon=True, fancybox=True, framealpha=0.9, loc='best')
+Results = Union[Dict[str, dict], List[dict]]
 
 
-def plot_cost_evolution(results_suite1, output_dir):
+def _as_list(results: Results) -> List[dict]:
+    return list(results.values()) if isinstance(results, dict) else list(results)
+
+
+def _style(ax, title: str, xlabel: str, ylabel: str) -> None:
+    ax.set_title(title, fontweight="bold")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def _curves(results: Iterable[dict], best_so_far: bool) -> np.ndarray:
+    """Stack the CVaR traces of several runs, padded to the longest one.
+
+    A run that stopped before the budget keeps its last value (its search is
+    over), so the padding does not invent progress.
     """
-    Figure 1: Evolution du coût CVaR pour QAOA et VQE avec différents alpha.
-    
-    Deux subplots: un pour QAOA, un pour VQE.
-    Chaque subplot affiche l'évolution du coût pour tous les alphas testés.
-    """
-    plt.style.use('ggplot')
-    fig = plt.figure(figsize=(16, 9))
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.5, 0.05, 4.5], hspace=0.3)
-    
-    # Extended distinct colors and markers
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-    markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'h', 'X', 'd']
-    
-    # Collect metadata
-    num_qubits = None
-    p = None
-    all_alphas = []
-    total_time = 0
-    max_iters = 0
-    optimizer_name = None
-    
-    for key, res in results_suite1.items():
-        if num_qubits is None:
-            num_qubits = res['num_qubits']
-        if p is None:
-            p = res.get('reps', 1)
-        all_alphas.append(res['cvar_alpha'])
-        total_time += res['time']
-        max_iters = max(max_iters, len(res['history']))
-        if optimizer_name is None:
-            optimizer_name = res['optimizer_name']
-    
-    all_alphas = sorted(set(all_alphas))
-    
-    # Add info panel at top
-    ax_info = fig.add_subplot(gs[0, :])
-    ax_info.axis('off')
-    
-    info_text = (
-        f"Qubits: {num_qubits}  |  Profondeur (p): {p}  |  Alphas: {len(all_alphas)} "
-        f"({min(all_alphas):.2f}–{max(all_alphas):.2f})  |  "
-        f"Max Itérations: {max_iters}  |  Optimiseur: {optimizer_name}  |  "
-        f"Temps Total: {total_time:.1f}s"
-    )
-    ax_info.text(0.5, 0.5, info_text, ha='center', va='center', fontsize=12, 
-                 fontweight='bold', transform=ax_info.transAxes,
-                 bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7, pad=1))
-    
-    # Separate QAOA and VQE
-    for plot_idx, ansatz_type in enumerate(['QAOA', 'VQE']):
-        ax = fig.add_subplot(gs[2, plot_idx])
-        
-        # Collect results by alpha for this ansatz type
-        results_by_alpha = {}
-        for key, res in results_suite1.items():
-            if res['ansatz_type'] == ansatz_type:
-                alpha = res['cvar_alpha']
-                if alpha not in results_by_alpha:
-                    results_by_alpha[alpha] = res
-        
-        # Sort alphas for consistent coloring
-        sorted_alphas = sorted(results_by_alpha.keys())
-        
-        # Plot for each alpha
-        for alpha_idx, alpha in enumerate(sorted_alphas):
-            res = results_by_alpha[alpha]
-            history = res['history']
-            y_vals = [step["cvar_mean_energy"] for step in history]
-            
-            label = fr"$\alpha={alpha:.2f}$ ({res['time']:.1f}s)"
-            ax.plot(
-                y_vals,
-                label=label,
-                linewidth=2.5,
-                color=colors[alpha_idx % len(colors)],
-                marker=markers[alpha_idx % len(markers)],
-                markersize=6,
-                markevery=max(1, len(y_vals)//15),
-                alpha=0.9
-            )
-        
-        style_plot(
-            ax,
-            fr"{ansatz_type} - Convergence pour différentes valeurs de $\alpha$",
-            "Itérations d'optimisation",
-            "Coût CVaR attendu"
-        )
-    
-    fig.suptitle("Évolution du coût CVaR-QAOA et CVaR-VQE", fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=(0, 0, 1, 0.97))
-    
-    out_path = os.path.join(output_dir, "cost_evolution.png")
-    plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    logger.info("Cost evolution figure saved to %s", out_path)
-
-
-def plot_optimizer_benchmark(results_suite2, output_dir):
-    """
-    Figure 2: Benchmark des optimizers pour QAOA et VQE.
-    
-    Deux subplots: un pour QAOA, un pour VQE.
-    Chaque subplot affiche la convergence pour différents algorithmes d'optimisation.
-    """
-    plt.style.use('ggplot')
-    fig = plt.figure(figsize=(16, 9))
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.5, 0.05, 4.5], hspace=0.3)
-    
-    # Extended distinct colors and markers
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-    markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'h', 'X', 'd']
-    
-    # Collect metadata
-    num_qubits = None
-    p = None
-    alpha_value = None
-    all_optimizers = set()
-    total_time = 0
-    max_iters = 0
-    
-    for key, res in results_suite2.items():
-        if num_qubits is None:
-            num_qubits = res['num_qubits']
-        if p is None:
-            p = res.get('reps', 1)
-        if alpha_value is None:
-            alpha_value = res['cvar_alpha']
-        all_optimizers.add(res['optimizer_name'])
-        total_time += res['time']
-        max_iters = max(max_iters, len(res['history']))
-    
-    all_optimizers = sorted(all_optimizers)
-    
-    # Add info panel at top
-    ax_info = fig.add_subplot(gs[0, :])
-    ax_info.axis('off')
-    
-    info_text = (
-        f"Qubits: {num_qubits}  |  Profondeur (p): {p}  |  Alpha: {alpha_value:.2f}  |  "
-        f"Optimiseurs: {len(all_optimizers)} ({', '.join(all_optimizers)})  |  "
-        f"Max Itérations: {max_iters}  |  Temps Total: {total_time:.1f}s"
-    )
-    ax_info.text(0.5, 0.5, info_text, ha='center', va='center', fontsize=12,
-                 fontweight='bold', transform=ax_info.transAxes,
-                 bbox=dict(boxstyle='round', facecolor='lightcyan', alpha=0.7, pad=1))
-    
-    # Separate QAOA and VQE
-    for plot_idx, ansatz_type in enumerate(['QAOA', 'VQE']):
-        ax = fig.add_subplot(gs[2, plot_idx])
-        
-        # Collect results for this ansatz type
-        results_by_optimizer = {}
-        for key, res in results_suite2.items():
-            if res['ansatz_type'] == ansatz_type:
-                optimizer_name = res['optimizer_name']
-                results_by_optimizer[optimizer_name] = res
-        
-        # Sort optimizers for consistent ordering
-        sorted_optimizers = sorted(results_by_optimizer.keys())
-        
-        # Plot for each optimizer
-        for opt_idx, opt_name in enumerate(sorted_optimizers):
-            res = results_by_optimizer[opt_name]
-            history = res['history']
-            # Limit to first 50 iterations for better visualization
-            y_vals = [step["cvar_mean_energy"] for step in history[:50]]
-            
-            ax.plot(
-                y_vals,
-                label=f"{opt_name} ({res['time']:.1f}s)",
-                linewidth=2.5,
-                color=colors[opt_idx % len(colors)],
-                marker=markers[opt_idx % len(markers)],
-                markersize=6,
-                markevery=max(1, len(y_vals)//15),
-                alpha=0.9
-            )
-        
-        alpha_str = f"{alpha_value:.2f}" if alpha_value is not None else "0.5"
-        style_plot(
-            ax,
-            fr"{ansatz_type} - Benchmark d'optimiseurs (α={alpha_str})",
-            "Itérations d'optimisation",
-            "Coût CVaR attendu"
-        )
-    
-    fig.suptitle("Benchmark des algorithmes d'optimisation", fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=(0, 0, 1, 0.97))
-    
-    out_path = os.path.join(output_dir, "optimizer_benchmark.png")
-    plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    logger.info("Optimizer benchmark figure saved to %s", out_path)
-
-
-def _compute_success_curves(
-    results: list,
-    ansatz_type: str,
-    reps: int,
-    sorted_alphas: list,
-    thresholds: list,
-    threshold_colors,
-    threshold_names: list,
-    markers: list,
-    ax,
-) -> None:
-    """Compute and draw success-probability curves on `ax` for one (ansatz, reps) panel."""
-    # Filter results for this (ansatz_type, reps)
-    results_by_alpha: dict = {}
+    traces = []
     for res in results:
-        if res['ansatz_type'] == ansatz_type and res['reps'] == reps:
-            alpha = res['cvar_alpha']
-            results_by_alpha.setdefault(alpha, []).append(res)
-
-    if not results_by_alpha:
-        return
-
-    # Shared normalised-iteration grid (each instance uses its own num_qubits)
-    all_norm_iters: set = set()
-    for alpha in sorted_alphas:
-        for res in results_by_alpha.get(alpha, []):
-            n = res['num_qubits']
-            for k in range(1, len(res['history']) + 1):
-                all_norm_iters.add(k / n)
-    x_grid = sorted(all_norm_iters)
-
-    for threshold, colors, thresh_name in zip(thresholds, threshold_colors, threshold_names):
-        for alpha_idx, alpha in enumerate(sorted_alphas):
-            ansatz_results = results_by_alpha.get(alpha, [])
-            if not ansatz_results:
-                continue
-
-            # Cumulative-best success_prob per instance on the normalised timeline
-            instance_curves = []
-            for res in ansatz_results:
-                n = res['num_qubits']
-                best = 0.0
-                curve: dict = {}
-                for k, step in enumerate(res['history'], start=1):
-                    best = max(best, step.get('success_prob', 0.0))
-                    curve[k / n] = best
-                instance_curves.append(curve)
-
-            # Fraction of instances whose cumulative best >= threshold up to t
-            fractions = []
-            for t in x_grid:
-                count = sum(
-                    1 for curve in instance_curves
-                    if max((v for nt, v in curve.items() if nt <= t), default=0.0) >= threshold
-                )
-                fractions.append(count / len(instance_curves))
-
-            ax.plot(
-                x_grid,
-                fractions,
-                label=f"{thresh_name} (α={alpha:.2f})",
-                linewidth=1.8,
-                color=colors[alpha_idx],
-                marker=markers[alpha_idx % len(markers)],
-                markersize=5,
-                markevery=max(1, len(x_grid) // 15),
-                alpha=0.9,
-            )
+        y = np.array([h["cvar_mean_energy"] for h in res["history"]], dtype=float)
+        if best_so_far:
+            y = np.minimum.accumulate(y)
+        traces.append(y)
+    length = max(len(t) for t in traces)
+    return np.vstack([np.pad(t, (0, length - len(t)), mode="edge") for t in traces])
 
 
-def plot_success_probability(results_suite3: list, output_dir: str) -> None:
-    """Plot success-probability curves in a (n_depths × 2) grid.
+def _plot_band(ax, data: np.ndarray, color, marker, label) -> None:
+    x = np.arange(1, data.shape[1] + 1)
+    med = np.median(data, axis=0)
+    ax.plot(x, med, color=color, marker=marker, markevery=max(1, len(x) // 8),
+            markersize=3.5, linewidth=1.4, label=label)
+    if data.shape[0] > 1:
+        q1, q3 = np.percentile(data, [25, 75], axis=0)
+        ax.fill_between(x, q1, q3, color=color, alpha=0.15, linewidth=0)
 
-    Rows correspond to circuit depths (reps); columns to VQE (left) and
-    QAOA (right). Reproduces the structure of Figure 4 in Barkoutsos et al.
-    (Quantum 4, 256, 2020).
 
-    Blue curves  → 1 % success threshold
-    Red  curves  → 10 % success threshold
-    Each colour shade corresponds to one CVaR alpha value.
+def _grouped_panels(results: Results, group_key: str, label_fmt, best_so_far: bool,
+                    ylabel: str, output_dir: str, filename: str,
+                    titles: Optional[Dict[str, str]] = None) -> str:
+    runs = _as_list(results)
+    ansatze = [a for a in ("QAOA", "VQE") if any(r["ansatz_type"] == a for r in runs)]
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(1, len(ansatze), figsize=(3.3 * len(ansatze), 2.6), squeeze=False)
+        for ax, ansatz in zip(axes[0], ansatze):
+            groups: Dict = {}
+            for r in runs:
+                if r["ansatz_type"] == ansatz:
+                    groups.setdefault(r[group_key], []).append(r)
+            for idx, key in enumerate(sorted(groups, key=lambda k: (isinstance(k, str), k))):
+                _plot_band(ax, _curves(groups[key], best_so_far),
+                           _COLORS[idx % len(_COLORS)], _MARKERS[idx % len(_MARKERS)],
+                           label_fmt(key))
+            _style(ax, (titles or {}).get(ansatz, ansatz), "Circuit evaluations", ylabel)
+        handles, labels = axes[0][0].get_legend_handles_labels()
+        ncol = min(len(labels), 7)
+        fig.tight_layout(rect=(0, 0.08 * ((len(labels) + ncol - 1) // ncol), 1, 1))
+        fig.legend(handles, labels, loc="lower center", ncol=ncol, frameon=False,
+                   bbox_to_anchor=(0.5, 0.0))
+        out_path = os.path.join(output_dir, filename)
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+    logger.info("Figure saved to %s", out_path)
+    return out_path
+
+
+def plot_cost_evolution(results: Results, output_dir: str,
+                        filename: str = "cost_evolution.png") -> str:
+    """CVaR cost per circuit evaluation, one curve per alpha (median ± IQR over seeds)."""
+    return _grouped_panels(
+        results, "cvar_alpha", lambda a: rf"$\alpha={a:g}$", best_so_far=False,
+        ylabel=r"CVaR$_\alpha$ cost", output_dir=output_dir, filename=filename,
+    )
+
+
+def plot_optimizer_benchmark(results: Results, output_dir: str,
+                             filename: str = "optimizer_benchmark.png",
+                             titles: Optional[Dict[str, str]] = None) -> str:
+    """Best CVaR found so far per circuit evaluation, one curve per optimizer."""
+    return _grouped_panels(
+        results, "optimizer_name", lambda o: str(o).replace("_PDFO", " (PDFO)"),
+        best_so_far=True, ylabel=r"Best CVaR$_\alpha$ so far",
+        output_dir=output_dir, filename=filename, titles=titles,
+    )
+
+
+def plot_curves_by(results: Results, key: str, output_dir: str, filename: str) -> str:
+    """Generic variant: one curve per distinct value of `key` (e.g. instance size)."""
+    return _grouped_panels(
+        results, key, lambda v: f"{key}={v}", best_so_far=False,
+        ylabel=r"CVaR$_\alpha$ cost", output_dir=output_dir, filename=filename,
+    )
+
+
+def _success_curves(runs: List[dict], thresholds, x_max: float):
+    """Fraction of instances whose best success probability reached each threshold."""
+    x = np.linspace(0.0, x_max, 400)
+    out = {}
+    for tau in thresholds:
+        reached = []
+        for r in runs:
+            n = r["num_qubits"]
+            sp = np.maximum.accumulate([h["success_prob"] for h in r["history"]])
+            t = np.arange(1, len(sp) + 1) / n
+            hit = np.nonzero(sp >= tau)[0]
+            reached.append(t[hit[0]] if len(hit) else np.inf)
+        reached = np.array(reached)
+        out[tau] = (x, np.array([(reached <= xi).mean() for xi in x]))
+    return out
+
+
+def plot_success_probability(results: Results, output_dir: str,
+                             filename: str = "success_probability.png") -> str:
+    """Fraction of instances reaching p_succ >= 1% (blue) and >= 10% (red) versus
+    normalised circuit evaluations t/n. Rows: depths. Columns: QAOA, VQE.
+    Reproduces the structure of Fig. 4 in Barkoutsos et al. (Quantum 4, 256, 2020).
     """
-    # ── Collect metadata ────────────────────────────────────────────────
-    all_reps   = sorted({res['reps']       for res in results_suite3})
-    all_alphas = sorted({res['cvar_alpha'] for res in results_suite3})
-    num_qubits = results_suite3[0]['num_qubits'] if results_suite3 else 0
-    total_time = sum(res['time'] for res in results_suite3)
-    n_rows     = len(all_reps)
+    runs = _as_list(results)
+    all_reps = sorted({r["reps"] for r in runs})
+    all_alphas = sorted({r["cvar_alpha"] for r in runs})
+    x_max = max(len(r["history"]) / r["num_qubits"] for r in runs)
+    shades = np.linspace(0.4, 1.0, max(len(all_alphas), 1))
+    palettes = {0.01: matplotlib.colormaps["Blues"], 0.10: matplotlib.colormaps["Reds"]}
 
-    n_alpha = len(all_alphas)
-    blue_cmap = cm.get_cmap('Blues')
-    red_cmap = cm.get_cmap('Reds')
-    blue_colors = blue_cmap(np.linspace(0.35, 1.0, max(n_alpha, 1)))
-    red_colors  = red_cmap( np.linspace(0.35, 1.0, max(n_alpha, 1)))
-    markers     = ['o', 's', '^', 'v', 'D', 'p', '*', 'h', 'X', 'd']
-
-    thresholds        = [0.01,       0.10]
-    threshold_colors  = [blue_colors, red_colors]
-    threshold_names   = ["1%",       "10%"]
-
-    # ── Figure layout: n_rows × 2, VQE left / QAOA right ───────────────
-    plt.style.use('ggplot')
-    fig, axes = plt.subplots(
-        n_rows, 2,
-        figsize=(16, 4.5 * n_rows),
-        sharey=True,
-        sharex=False,
-    )
-    if n_rows == 1:
-        axes = axes[np.newaxis, :]   # always 2-D array
-
-    for row_idx, reps in enumerate(all_reps):
-        for col_idx, ansatz_type in enumerate(['QAOA', 'VQE']):
-            ax = axes[row_idx, col_idx]
-            _compute_success_curves(
-                results_suite3, ansatz_type, reps,
-                all_alphas, thresholds, threshold_colors, threshold_names,
-                markers, ax,
-            )
-            style_plot(
-                ax,
-                f"{ansatz_type}, depth {reps}",
-                "Normalized number of iterations (t / n)",
-                "Fraction of Instances",
-            )
-            ax.set_ylim(0, 1.05)
-
-    # ── Shared legend (top-right panel) ─────────────────────────────────
-    handles, labels = axes[0, 1].get_legend_handles_labels()
-    if handles:
-        axes[0, 1].legend(
-            handles, labels,
-            fontsize=7, ncol=2,
-            loc='lower right',
-            framealpha=0.9,
-        )
-    # Remove auto-legends from all other panels
-    for row_idx in range(n_rows):
-        for col_idx in range(2):
-            if not (row_idx == 0 and col_idx == 1):
-                legend = axes[row_idx, col_idx].get_legend()
-                if legend:
-                    legend.remove()
-
-    fig.suptitle(
-        f"Success probability — MaxCut, {num_qubits} qubits  "
-        f"(Blue: ≥1%, Red: ≥10%)  |  Total: {total_time:.0f}s",
-        fontsize=13, fontweight='bold',
-    )
-    plt.tight_layout()
-
-    out_path = os.path.join(output_dir, "success_probability_report.png")
-    plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(len(all_reps), 2, figsize=(6.6, 2.3 * len(all_reps)),
+                                 sharey=True, squeeze=False)
+        for row, reps in enumerate(all_reps):
+            for col, ansatz in enumerate(["QAOA", "VQE"]):
+                ax = axes[row][col]
+                for a_idx, alpha in enumerate(all_alphas):
+                    sel = [r for r in runs if r["reps"] == reps and r["ansatz_type"] == ansatz
+                           and r["cvar_alpha"] == alpha]
+                    if not sel:
+                        continue
+                    for tau, (xs, ys) in _success_curves(sel, palettes, x_max).items():
+                        ax.step(xs, ys, where="post", linewidth=1.3,
+                                color=palettes[tau](shades[a_idx]),
+                                label=rf"{tau:.0%}, $\alpha={alpha:g}$")
+                _style(ax, f"{ansatz}, p = {reps}",
+                       "Normalized evaluations t / n" if row == len(all_reps) - 1 else "",
+                       "Fraction of instances" if col == 0 else "")
+                ax.set_ylim(0, 1.05)
+        handles, labels = axes[0][1].get_legend_handles_labels()
+        fig.tight_layout(rect=(0, 0.1, 1, 1))
+        fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False,
+                   bbox_to_anchor=(0.5, 0.0))
+        out_path = os.path.join(output_dir, filename)
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
     logger.info("Success probability figure saved to %s", out_path)
+    return out_path
 
 
-def plot_distribution_evolution(result: dict, output_dir: str, filename: str | None = None) -> None:
-    """Plot the probability distribution at the first and last optimizer iteration.
+def plot_distribution_evolution(result: dict, output_dir: str, filename: Optional[str] = None) -> Optional[str]:
+    """Outcome distribution at the first and last circuit evaluation.
 
-    Shows side-by-side normalised histograms so you can see how the quantum
-    circuit has learned to concentrate probability on lower-energy states.
-
-    Args:
-        result:     A single result dict returned by run_experiment().
-        output_dir: Directory where the PNG is saved.
-        filename:   Output filename (default: distribution_<ansatz>_alpha<alpha>.png).
+    Bitstrings are sorted by energy (lowest left). Orange: optimal states;
+    green: states inside the CVaR alpha-tail; blue: other states. Labels are
+    written in variable order (character i = vertex i).
     """
     history = result.get("history", [])
     if len(history) < 2:
-        logger.warning("Not enough iterations to plot distribution evolution (need ≥ 2).")
-        return
+        logger.warning("Not enough evaluations to plot distribution evolution (need >= 2).")
+        return None
 
-    num_qubits = result["num_qubits"]
-    ansatz_type = result["ansatz_type"]
-    cvar_alpha = result["cvar_alpha"]
-    shots = result.get("shots", "?")
+    n = result["num_qubits"]
+    alpha = result["cvar_alpha"]
+    total_states = 2 ** n
+    optimal_states = set(result.get("optimal_states", frozenset()))
 
-    first_dist = history[0]["distribution"]
-    final_dist = history[-1]["distribution"]
-    total_states = 2 ** num_qubits
+    energies: Dict[int, float] = {}
+    for h in (history[0], history[-1]):
+        energies.update(h.get("state_energies", {}))
+    ordered = sorted(energies, key=lambda s: (energies[s], s))
+    ordered += sorted(s for s in range(total_states) if s not in energies)
 
-    def _to_prob_array(dist: dict) -> np.ndarray:
-        """Convert {state_int: count} to a probability array over all 2^n states."""
-        total = sum(dist.values())
-        arr = np.zeros(total_states)
-        for state, count in dist.items():
-            if state < total_states:
-                arr[state] = count / total
-        return arr
+    def probs(dist):
+        tot = sum(dist.values())
+        return np.array([dist.get(s, 0) / tot for s in ordered])
 
-    def _cvar_states(dist: dict, state_energies: dict, alpha: float) -> set:
-        """Return the set of states that fall within the CVaR α-fraction.
-
-        States are sorted by energy (ascending). We accumulate their probability
-        mass until we reach alpha, marking each as 'in CVaR'.
-        """
-        total = sum(dist.values())
-        if total == 0 or not state_energies:
-            return set()
-        probs = {s: c / total for s, c in dist.items()}
-        sorted_states = sorted(state_energies, key=lambda s: state_energies[s])
-        accumulated = 0.0
-        in_cvar = set()
-        for s in sorted_states:
-            if accumulated >= alpha:
+    def cvar_states(h):
+        dist, en = h["distribution"], h.get("state_energies", {})
+        tot = sum(dist.values())
+        acc, inside = 0.0, set()
+        for s in sorted(en, key=lambda s: en[s]):
+            if acc >= alpha:
                 break
-            in_cvar.add(s)
-            accumulated += probs.get(s, 0.0)
-        return in_cvar
+            inside.add(s)
+            acc += dist.get(s, 0) / tot
+        return inside
 
-    first_probs = _to_prob_array(first_dist)
-    final_probs = _to_prob_array(final_dist)
-    optimal_states = result.get("optimal_states", frozenset())
-    optimal_labels = [format(s, f"0{num_qubits}b") for s in sorted(optimal_states)]
-
-    first_state_energies = history[0].get("state_energies", {})
-    final_state_energies = history[-1].get("state_energies", {})
-
-    # Build a global energy ordering using all sampled energies (union of both iterations).
-    # States never sampled in either iteration are placed at the right end (highest energy),
-    # sorted by their integer index for determinism.
-    combined_energies: dict = {**first_state_energies, **final_state_energies}
-    sampled_states_by_energy = sorted(combined_energies, key=lambda s: combined_energies[s])
-    unsampled_states = sorted(s for s in range(total_states) if s not in combined_energies)
-    ordered_states = sampled_states_by_energy + unsampled_states  # low → high energy
-
-    # x positions are just 0..total_states-1; we re-label them with the ordered bitstrings
-    x = np.arange(total_states)
-    labels = [format(s, f"0{num_qubits}b") for s in ordered_states]
-
-    # Re-index probability arrays to match the new ordering
-    first_probs_ordered = np.array([first_probs[s] for s in ordered_states])
-    final_probs_ordered = np.array([final_probs[s] for s in ordered_states])
-
-    first_cvar_states = _cvar_states(first_dist, first_state_energies, cvar_alpha)
-    final_cvar_states = _cvar_states(final_dist, final_state_energies, cvar_alpha)
-
-    def _bar_colors(cvar_states: set) -> list:
-        """orange = optimal states, green = in CVaR, blue = other."""
-        result_colors = []
-        for s in ordered_states:
-            if s in optimal_states:
-                result_colors.append("#ff7f0e")
-            elif s in cvar_states:
-                result_colors.append("#2ca02c")
-            else:
-                result_colors.append("#1f77b4")
-        return result_colors
-
-    plt.style.use("ggplot")
-    fig, axes = plt.subplots(1, 2, figsize=(16, 5), sharey=True)
-    fig.suptitle(
-        f"Probability Distribution — {ansatz_type}  α={cvar_alpha:.2f}  "
-        f"({num_qubits} qubits, {shots} shots)",
-        fontsize=14, fontweight="bold",
-    )
-
-    for ax, probs, title, cvar_states in zip(
-        axes,
-        [first_probs_ordered, final_probs_ordered],
-        [f"Iteration 1  (before optimisation)", f"Iteration {len(history)}  (after optimisation)"],
-        [first_cvar_states, final_cvar_states],
-    ):
-        bar_colors = _bar_colors(cvar_states)
-        ax.bar(x, probs, color=bar_colors, alpha=0.8, width=0.8)
-        # Legend proxy artists
-        ax.bar([], [], color="#1f77b4", alpha=0.8, label="Other states")
-        ax.bar([], [], color="#2ca02c", alpha=0.8, label=f"CVaR α={cvar_alpha:.2f} region")
-        if optimal_states:
-            opt_legend = ", ".join(optimal_labels[:4])
-            if len(optimal_labels) > 4:
-                opt_legend += f" (+{len(optimal_labels) - 4} more)"
-            ax.bar([], [], color="#ff7f0e", alpha=0.8, label=f"Optimal: {opt_legend}")
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=90, fontsize=max(6, 9 - num_qubits))
-        style_plot(ax, title, "Bitstring  (sorted low → high energy)", "Probability")
-
-    fig.tight_layout()
-
-    if filename is None:
-        filename = f"distribution_{ansatz_type}_alpha{cvar_alpha:.2f}.png"
-    out_path = os.path.join(output_dir, filename)
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close()
-    logger.info("Distribution evolution figure saved to %s", out_path)
+    with plt.rc_context(_RC):
+        fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.4), sharey=True)
+        for ax, h, title in zip(axes, (history[0], history[-1]),
+                                ("Before optimization", f"After {len(history)} evaluations")):
+            tail = cvar_states(h)
+            colors = ["#ff7f0e" if s in optimal_states else "#2ca02c" if s in tail else "#1f77b4"
+                      for s in ordered]
+            ax.bar(np.arange(total_states), probs(h["distribution"]), color=colors, width=0.85)
+            ax.set_xticks([])
+            _style(ax, title, "Bitstrings, sorted by increasing energy",
+                   "Probability" if ax is axes[0] else "")
+        axes[1].legend(handles=[
+            Patch(color="#ff7f0e", label="Optimal cut"),
+            Patch(color="#2ca02c", label=rf"CVaR tail ($\alpha={alpha:g}$)"),
+            Patch(color="#1f77b4", label="Other states"),
+        ], loc="upper right", framealpha=0.9)
+        fig.tight_layout()
+        if filename is None:
+            filename = f"distribution_{result['ansatz_type']}_alpha{alpha:g}.png"
+        out_path = os.path.join(output_dir, filename)
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+    logger.info("Distribution figure saved to %s", out_path)
+    return out_path

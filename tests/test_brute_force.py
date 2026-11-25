@@ -1,55 +1,53 @@
-"""Test brute force optimal state search."""
+"""Brute-force optimal states: values and consistency with the quantum operator."""
+import numpy as np
+import pytest
 
 from problems.maxcut.instances import MaxCutInstanceGenerator
-from quantum_core.solver import brute_force
+from problems.maxcut.solvers import BruteForceSolver
+from quantum_core.cvar_cost import evaluate_sparse_pauli
+from quantum_core.solver import brute_force, state_to_bitstring
 
 
-def _solve(hamiltonian):
-    optimal_states = brute_force(hamiltonian)
-    # Pick canonical representative (lowest int) for display
-    representative = min(optimal_states)
-    optimal_bitstring = format(representative, f"0{hamiltonian.num_qubits}b")
-    optimal_value = hamiltonian.evaluate(optimal_bitstring)
-    return optimal_states, optimal_bitstring, optimal_value
+def _quantum_optima(h):
+    op = h.to_pauli_op()
+    energies = {s: float(np.real(evaluate_sparse_pauli(s, op))) for s in range(2 ** h.num_qubits)}
+    best = min(energies.values())
+    return frozenset(s for s, e in energies.items() if abs(e - best) < 1e-9), best
 
 
-def test_brute_force_fixed_4():
-    h = MaxCutInstanceGenerator.fixed(4)
-    states, bs, val = _solve(h)
-    print(f"\n4-qubit: repr={bs}, energy={val}, num_optimal={len(states)}")
+@pytest.mark.parametrize("n, max_cut", [(4, 4), (6, 9)])
+def test_fixed_instances_max_cut(n, max_cut):
+    result = BruteForceSolver().solve(MaxCutInstanceGenerator.fixed(n))
+    assert result["cut_size"] == max_cut
+    assert result["energy"] == -max_cut
 
 
-def test_brute_force_fixed_6():
-    h = MaxCutInstanceGenerator.fixed(6)
-    states, bs, val = _solve(h)
-    print(f"\n6-qubit: repr={bs}, energy={val}, num_optimal={len(states)}")
-
-
-def test_brute_force_fixed_10():
-    h = MaxCutInstanceGenerator.fixed(10)
-    states, bs, val = _solve(h)
-    print(f"\n10-qubit: repr={bs}, energy={val}, num_optimal={len(states)}")
-
-
-def test_brute_force_complete_graph():
+def test_complete_graph_k4():
     h = MaxCutInstanceGenerator.complete(4)
-    states, bs, val = _solve(h)
-    print(f"\nK4: repr={bs}, energy={val}, cut={-val}, num_optimal={len(states)}")
+    states = brute_force(h)
+    # K4: best cut is 2|2 -> 4 edges; C(4,2) = 6 optimal bitstrings
+    assert len(states) == 6
+    assert h.evaluate(state_to_bitstring(min(states), 4)) == -4
 
 
-def test_brute_force_grid():
-    h = MaxCutInstanceGenerator.grid(rows=2, cols=2)
-    states, bs, val = _solve(h)
-    print(f"\n2x2 grid: repr={bs}, energy={val}, num_optimal={len(states)}")
+def test_optimal_states_come_in_complementary_pairs():
+    h = MaxCutInstanceGenerator.random(8, 0.5, seed=801)
+    states = brute_force(h)
+    assert all(((1 << 8) - 1) ^ s in states for s in states)
 
 
-if __name__ == "__main__":
-    for fn in [
-        test_brute_force_fixed_4,
-        test_brute_force_fixed_6,
-        test_brute_force_fixed_10,
-        test_brute_force_complete_graph,
-        test_brute_force_grid,
-    ]:
-        fn()
-    print("\nAll tests completed!")
+@pytest.mark.parametrize("seed", range(800, 810))
+def test_brute_force_matches_quantum_operator(seed):
+    """Regression test for the bit-ordering bug: random graphs are not symmetric
+    under vertex relabelling i -> n-1-i, so a wrong convention is detected."""
+    h = MaxCutInstanceGenerator.random(8, 0.5, seed=seed)
+    quantum_states, quantum_energy = _quantum_optima(h)
+    assert brute_force(h) == quantum_states
+    assert quantum_energy == h.evaluate(state_to_bitstring(min(quantum_states), 8))
+
+
+def test_operator_energy_equals_minus_cut_for_every_state():
+    h = MaxCutInstanceGenerator.random(6, 0.6, seed=3)
+    op = h.to_pauli_op()
+    for s in range(2 ** 6):
+        assert np.isclose(np.real(evaluate_sparse_pauli(s, op)), h.evaluate(state_to_bitstring(s, 6)))

@@ -65,6 +65,14 @@ class ScipyOptimizer(ClassicalOptimizer):
         self.method = method
         self.supports_bounds = supports_bounds
 
+    def _options(self) -> Dict[str, Any]:
+        """Optimizer options. `maxiter` is the evaluation budget; methods that
+        distinguish iterations from function evaluations also get `maxfev`."""
+        options: Dict[str, Any] = {"maxiter": self.maxiter}
+        if self.method in ("Nelder-Mead", "Powell"):
+            options["maxfev"] = self.maxiter
+        return options
+
     def optimize(
         self,
         objective_function: Callable[[NDArray[np.float64]], float],
@@ -86,7 +94,7 @@ class ScipyOptimizer(ClassicalOptimizer):
             method=self.method,
             tol=self.tol,
             bounds=bounds,
-            options={'maxiter': self.maxiter}
+            options=self._options(),
         )
         logger.debug(f"{self.method} optimization finished in {getattr(result, 'nfev', 'Unknown')} evaluations.")
 
@@ -154,15 +162,16 @@ class SimulatedAnnealing(ClassicalOptimizer):
         """Execute `scipy.optimize.dual_annealing`."""
         
         if bounds is None:
-            logger.info("dual_annealing requires bounds. Defaulting to [-pi, pi] per parameter.")
-            bounds = [(-np.pi, np.pi)] * len(initial_point)
+            # Same box as the random initial point drawn in run_experiment
+            logger.info("dual_annealing requires bounds. Defaulting to [0, 2pi] per parameter.")
+            bounds = [(0.0, 2 * np.pi)] * len(initial_point)
             
         logger.info("Starting Simulated Annealing (dual_annealing) optimization...")
         result = opt.dual_annealing(
             objective_function,
             bounds=bounds,
             x0=initial_point,
-            maxiter=self.maxiter
+            maxfun=self.maxiter,
         )
         logger.debug(f"Simulated Annealing finished in {getattr(result, 'nfev', 'Unknown')} evals.")
         
